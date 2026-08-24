@@ -1,0 +1,42 @@
+{
+  "source": "github",
+  "updatedAt": "2026-08-24T23:10:00Z",
+  "missionId": "DESK-LIVE",
+  "objective": "Copy this shape when Chief of Staff appends a desk event",
+  "events": [
+    {
+      "id": "desk-100",
+      "missionId": "DESK-LIVE",
+      "agent": "scout",
+      "state": "working",
+      "activity": "sourced 6 links",
+      "zone": "library",
+      "progress": 16,
+      "timestamp": "2026-08-24T23:10:00Z",
+      "from": "mimir",
+      "to": "helm",
+      "channel": "crypto",
+      "title": "Desk update",
+      "text": "Short example: Mimir reports a verified crypto note to Chief of Staff.",
+      "tone": "cyan"
+    },
+    {
+      "id": "desk-101",
+      "missionId": "DESK-LIVE",
+      "agent": "relay",
+      "state": "waiting approval",
+      "activity": "trade ticket staged",
+      "zone": "airlock",
+      "progress": 97,
+      "timestamp": "2026-08-24T23:11:00Z",
+      "from": "huginn",
+      "to": "helm",
+      "channel": "release",
+      "title": "Approval required",
+      "text": "Consequential action staged. The floor must stop here — never auto-execute.",
+      "action": "trade",
+      "approval": true,
+      "tone": "amber"
+    }
+  ]
+}
