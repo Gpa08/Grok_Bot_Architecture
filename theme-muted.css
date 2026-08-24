@@ -62,7 +62,7 @@ dialog{border-color:#333;background:#0a0b0a;box-shadow:none}
 @media(max-width:600px){.topbar{grid-template-columns:minmax(0,1fr) 96px}.brand{gap:7px;padding-inline:7px}.brand-mark{width:30px;height:30px}.brand h1{font-size:15px;letter-spacing:.02em}.brand span{font-size:5px}.creator-tag{margin:5px 5px 5px 0}.creator-tag small{font-size:4px}.creator-tag strong{margin-top:3px;font-size:8px}.brand .live{display:none}}
 
 /* GROK BOT TRANSPORT */
-.live{white-space:nowrap}.live[data-mode=mock]:after{content:"SIM";margin-left:6px;padding-left:6px;border-left:1px solid currentColor;font-size:6px;opacity:.55}.live.online i{background:var(--green)}.live.connecting i{background:var(--amber)}.live.offline{color:var(--red)}.live.offline i{background:var(--red)}
+.live{white-space:nowrap}.live[data-mode=mock]:after{content:"SIM";margin-left:6px;padding-left:6px;border-left:1px solid currentColor;font-size:6px;opacity:.55}.live[data-mode=live]:after{content:"LIVE";margin-left:6px;padding-left:6px;border-left:1px solid currentColor;font-size:6px;color:var(--green);opacity:.95}.live.online i{background:var(--green)}.live.connecting i{background:var(--amber)}.live.offline{color:var(--red)}.live.offline i{background:var(--red)}
 .feed-foot span{min-width:0}.feed-foot span i{flex:0 0 auto}.feed-foot span em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal}
 
 /* MISSION LEDGER */

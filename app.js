@@ -16,12 +16,14 @@ const zones=[
 const points={bridge:{x:165,y:210},build:{x:455,y:210},audit:{x:740,y:210},skill:{x:165,y:430},vault:{x:455,y:430},airlock:{x:740,y:430},core:{x:455,y:292},monitor:{x:500,y:92},library:{x:82,y:292},printer:{x:310,y:300},lounge:{x:755,y:292},server:{x:835,y:350}};
 const initial=[
  {id:"helm",name:"Helm",letter:"H",role:"Chief of Staff",color:C.helm,state:"idle",task:"Awaiting mission",zone:"bridge",x:165,y:210,tx:165,ty:210},
- {id:"forge",name:"Forge",letter:"F",role:"Lead Product Engineer",color:C.forge,state:"idle",task:"Systems standing by",zone:"build",x:455,y:210,tx:455,ty:210},
- {id:"sentinel",name:"Sentinel",letter:"S",role:"QA & Safety Auditor",color:C.sentinel,state:"idle",task:"Monitoring controls",zone:"audit",x:740,y:210,tx:740,ty:210},
- {id:"scout",name:"Scout",letter:"S",role:"Research Specialist",color:C.scout,state:"idle",task:"Watching signals",zone:"skill",x:165,y:430,tx:165,ty:430},
- {id:"archive",name:"Archive",letter:"A",role:"Memory & Artifacts",color:C.archive,state:"idle",task:"Vault synchronized",zone:"vault",x:455,y:430,tx:455,ty:430},
- {id:"relay",name:"Relay",letter:"R",role:"External Operations",color:C.relay,state:"idle",task:"Airlock standing by",zone:"airlock",x:740,y:430,tx:740,ty:430}
+ {id:"forge",name:"Njord",letter:"N",role:"US stocks",color:C.forge,state:"idle",task:"Watching the US tape",zone:"build",x:455,y:210,tx:455,ty:210},
+ {id:"sentinel",name:"Syn",letter:"S",role:"Safety",color:C.sentinel,state:"idle",task:"Monitoring controls",zone:"audit",x:740,y:210,tx:740,ty:210},
+ {id:"scout",name:"Mimir",letter:"M",role:"Crypto research",color:C.scout,state:"idle",task:"Watching crypto signals",zone:"skill",x:165,y:430,tx:165,ty:430},
+ {id:"archive",name:"Heimdall",letter:"H",role:"Market regime",color:C.archive,state:"idle",task:"Tracking the regime board",zone:"vault",x:455,y:430,tx:455,ty:430},
+ {id:"relay",name:"Huginn",letter:"G",role:"X monitor",color:C.relay,state:"idle",task:"Watching X",zone:"airlock",x:740,y:430,tx:740,ty:430}
 ];
+const deskAliases={helm:"helm",chief:"helm","chief of staff":"helm",scout:"scout",mimir:"scout",forge:"forge",njord:"forge",archive:"archive",heimdall:"archive",sentinel:"sentinel",syn:"sentinel",relay:"relay",huginn:"relay"};
+const consequentialActions=new Set(["trade","order","buy","sell","execute","publish","release"]);
 let agents=initial.map(a=>({...a}));
 const state={running:false,paused:false,approval:false,complete:false,rejected:false,elapsed:0,duration:300000,last:performance.now(),cursor:0,speed:1,count:0,spend:.42,artifacts:0,particles:[],selected:"helm",ambientAt:performance.now()+1800};
 const stages=["scope","research","synthesis","evidence","review","release"];
@@ -73,21 +75,57 @@ function agent(id,status,task,zone){
  if(zone&&points[zone]){a.zone=zone;const offsets={helm:-55,scout:55,forge:-55,archive:55,sentinel:-55,relay:55},x=points[zone].x+(zone==="core"?offsets[id]||0:0),y=points[zone].y+(zone==="core"&&(id==="scout"||id==="archive"||id==="relay")?8:0);navigate(a,x,y);burst(a.x,a.y,a.color,6)}
  renderRoster();if(state.selected===id)select(id);
 }
-function event(actor,title,message,tone){
+function event(actor,title,message,tone,at,missionId){
  const colors={cyan:C.cyan,green:C.green,amber:C.amber,red:C.red,violet:C.sentinel};
- const el=document.createElement("article"),time=new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date());
+ const el=document.createElement("article"),time=new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(at?new Date(at):new Date());
  el.className="event";el.style.setProperty("--tone",colors[tone]||C.cyan);
- el.innerHTML='<i></i><div><b>'+actor+'</b><time>'+time+'</time></div><p><strong>'+title+'.</strong> '+message+'</p>';
+ el.innerHTML='<i></i><div><b>'+escapeHtml(actor)+'</b><time>'+time+'</time></div><p><strong>'+escapeHtml(title)+'.</strong> '+escapeHtml(message)+'</p>';
  $("#eventFeed").prepend(el);state.count++;$("#eventCount").textContent=String(state.count).padStart(2,"0")+" EVENTS";
- if(bridge)bridge.recordEvent({missionId:"NS-INT-042",actor,title,message,tone});
+ if(bridge)bridge.recordEvent({missionId:missionId||(deskWatching()?"DESK-LIVE":"NS-INT-042"),actor,title,message,tone});
+}
+function deskWatching(){return !!(bridge&&bridge.mode==="live")}
+function resolveAgent(value){if(!value)return"";const key=String(value).trim().toLowerCase();if(deskAliases[key])return deskAliases[key];const named=agents.find(a=>a.id===key||a.name.toLowerCase()===key);return named?named.id:""}
+function deskClock(value){if(!value)return"";const date=new Date(value);return Number.isNaN(date.getTime())?"":new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(date)}
+function demoBusy(){return state.running||state.approval||state.complete||state.rejected||state.elapsed>0}
+function isConsequential(packet){
+ if(!packet)return false;if(packet.approval===true||packet.requiresApproval===true)return true;
+ const action=String(packet.action||"").trim().toLowerCase();return consequentialActions.has(action);
 }
 function resetComms(){
  commSignals.length=0;commSequence=0;const items=$("#commItems");if(items)items.innerHTML='<article class="comm-empty"><i></i><p>Encrypted handoff channels standing by.</p></article>';if($("#commBus"))$("#commBus").textContent="BUS READY";
 }
-function sendComm(fromId,toId,message,channel="handoff",duration=11000){
+function sendComm(fromId,toId,message,channel="handoff",duration=11000,stamp){
  const from=agents.find(a=>a.id===fromId),to=agents.find(a=>a.id===toId);if(!from||!to)return;
  const signal={id:++commSequence,fromId,toId,message,channel,color:from.color,born:performance.now(),duration};commSignals.push(signal);if(commSignals.length>8)commSignals.shift();
- const items=$("#commItems"),row=document.createElement("article"),stamp="T+"+formatDuration(state.elapsed);row.className="comm-message";row.style.setProperty("--comm",from.color);row.innerHTML='<div><strong>'+escapeHtml(from.name.toUpperCase()+" → "+to.name.toUpperCase())+'</strong><time>'+stamp+'</time></div><p><em>'+escapeHtml(channel)+'</em>'+escapeHtml(message)+'</p>';if(items.querySelector(".comm-empty"))items.innerHTML="";items.prepend(row);while(items.children.length>3)items.lastElementChild.remove();$("#commBus").textContent=String(commSequence).padStart(2,"0")+" ROUTED";burst(from.x,from.y,from.color,10);burst(to.x,to.y,to.color,6);
+ const items=$("#commItems"),row=document.createElement("article"),label=stamp||("T+"+formatDuration(state.elapsed));row.className="comm-message";row.style.setProperty("--comm",from.color);row.innerHTML='<div><strong>'+escapeHtml(from.name.toUpperCase()+" → "+to.name.toUpperCase())+'</strong><time>'+escapeHtml(label)+'</time></div><p><em>'+escapeHtml(channel)+'</em>'+escapeHtml(message)+'</p>';if(items.querySelector(".comm-empty"))items.innerHTML="";items.prepend(row);while(items.children.length>3)items.lastElementChild.remove();$("#commBus").textContent=String(commSequence).padStart(2,"0")+" ROUTED";burst(from.x,from.y,from.color,10);burst(to.x,to.y,to.color,6);
+}
+function applyDeskEvent(packet){
+ if(!packet||typeof packet!=="object")return;
+ const agentId=resolveAgent(packet.agent||packet.from),fromId=resolveAgent(packet.from),toId=resolveAgent(packet.to);
+ const text=packet.text||packet.message||"",activity=packet.activity||text||"desk update",title=packet.title||(fromId&&toId?"Agent comms":"Desk update");
+ const tone=packet.tone||(isConsequential(packet)?"amber":"cyan"),missionId=packet.missionId||(bridge&&bridge.deskMeta&&bridge.deskMeta.missionId)||"DESK-LIVE";
+ if(!demoBusy()){
+  if(agentId)agent(agentId,packet.state||(isConsequential(packet)?"waiting approval":"working"),activity,packet.zone);
+  if(typeof packet.progress==="number"){const name=packet.stage||(packet.progress>=89?"release":packet.progress>=71?"review":packet.progress>=54?"evidence":packet.progress>=28?"synthesis":packet.progress>=9?"research":"scope");stage(name,packet.progress,packet.objective||(bridge&&bridge.deskMeta&&bridge.deskMeta.objective)||title,activity)}
+  if(packet.missionId||(bridge&&bridge.deskMeta&&bridge.deskMeta.missionId)){const node=$("#missionCode");if(node)node.textContent=missionId}
+ }
+ if(fromId&&toId&&(text||packet.activity))sendComm(fromId,toId,text||packet.activity,packet.channel||"desk",12000,deskClock(packet.timestamp)||"LIVE");
+ if(!packet._restore&&(title||text||packet.activity))event(packet.agent||packet.from||"desk",title,text||packet.activity||"Live desk event.",tone,packet.timestamp,missionId);
+ if(isConsequential(packet)&&!state.approval)requestLiveApproval(packet);
+}
+function restoreDeskFloor(){
+ if(!bridge||!Array.isArray(bridge.deskEvents)||!bridge.deskEvents.length||demoBusy())return;
+ resetComms();
+ bridge.deskEvents.forEach(packet=>applyDeskEvent(Object.assign({},packet,{_restore:true})));
+}
+function requestLiveApproval(packet){
+ const actor=agents.find(a=>a.id===resolveAgent(packet.agent||packet.from||"relay"))||agents.find(a=>a.id==="relay");
+ const action=packet.action||packet.title||"Consequential desk action";
+ const alertTitle=$("#approvalRequest .alert b"),facts=document.querySelectorAll("#approvalRequest .facts span b");
+ if(alertTitle)alertTitle.textContent=String(action).replaceAll("_"," ");
+ if(facts[0])facts[0].textContent=(actor&&actor.name||"Huginn").toUpperCase();
+ if(facts[2])facts[2].textContent="HELD";
+ requestApproval({missionId:packet.missionId||"DESK-LIVE",agent:actor&&actor.id||"relay",action:String(action),reversible:true});
 }
 function ledgerCall(method,...args){if(!ledger||typeof ledger[method]!=="function")return Promise.resolve(null);return ledger[method](...args).catch(error=>{event("ledger","Ledger warning",error.message,"red");return null})}
 function sealArtifact(spec){return ledgerCall("createArtifact",spec)}
@@ -155,22 +193,26 @@ function stage(name,progress,title,sub){
  $("#progressBar").style.width=progress+"%";$("#progressLabel").textContent=progress===100?"100% · COMPLETE":progress+"% · "+formatDuration(state.duration-state.elapsed)+" left";$("#missionTitle").textContent=title;$("#missionSub").textContent=sub;
  const current=stages.indexOf(name);document.querySelectorAll("#stages span").forEach((n,i)=>{n.classList.toggle("active",i===current);n.classList.toggle("done",i<current)});
 }
-function requestApproval(){
+function requestApproval(payload){
  state.approval=true;state.running=false;$("#approvalIdle").hidden=true;$("#approvalRequest").hidden=false;
  $("#airlockMetric").textContent="01 WAITING";$("#airlockMetric").style.color=C.red;$("#riskBadge").textContent="APPROVAL HOLD";$("#riskBadge").style.color=C.red;burst(points.airlock.x,points.airlock.y,C.red,28);
- if(bridge)bridge.requestApproval({missionId:"NS-INT-042",agent:"relay",action:"publish intelligence brief",reversible:true});
+ if(bridge)bridge.requestApproval(payload||{missionId:"NS-INT-042",agent:"relay",action:"publish intelligence brief",reversible:true});
 }
 function resolve(ok){
  if(!state.approval)return;state.approval=false;$("#approvalIdle").hidden=false;$("#approvalRequest").hidden=true;$("#airlockMetric").textContent="CLEAR";$("#airlockMetric").style.color="";
  if(bridge)bridge.resolveApproval(ok?"approved":"rejected");
  ledgerCall("recordApproval",ok?"approved":"rejected");
- if(ok){event("operator","Action approved","The intelligence brief passed through the Approval Airlock.","green");agent("relay","complete","release approved","airlock");agent("helm","complete","mission completed","bridge");stage("release",100,"Mission complete","Six agents produced an audited brief with a traceable evidence record.");$("#riskBadge").textContent="COMPLETED";$("#riskBadge").style.color=C.green;state.complete=true;state.spend=4.07;$("#spendMetric").textContent="$4.07";setTimeout(()=>event("helm","Mission completed","NS-INT-042 closed with a clean evidence record.","green"),500);burst(points.bridge.x,points.bridge.y,C.green,24)}
+ const liveHold=deskWatching()&&state.elapsed===0;
+ if(ok&&liveHold){event("operator","Action approved","Operator cleared the airlock. The floor records the decision and does not execute the trade.","green");agent("relay","complete","held for operator","airlock");agent("helm","working","recording operator decision","bridge");$("#riskBadge").textContent="CLEARED";$("#riskBadge").style.color=C.green;burst(points.bridge.x,points.bridge.y,C.green,18)}
+ else if(ok){event("operator","Action approved","The intelligence brief passed through the Approval Airlock.","green");agent("relay","complete","release approved","airlock");agent("helm","complete","mission completed","bridge");stage("release",100,"Mission complete","Six agents produced an audited brief with a traceable evidence record.");$("#riskBadge").textContent="COMPLETED";$("#riskBadge").style.color=C.green;state.complete=true;state.spend=4.07;$("#spendMetric").textContent="$4.07";setTimeout(()=>event("helm","Mission completed","NS-INT-042 closed with a clean evidence record.","green"),500);burst(points.bridge.x,points.bridge.y,C.green,24)}
+ else if(liveHold){event("operator","Action rejected","Desk action blocked at the airlock. No order was sent.","red");agent("relay","idle","release cancelled","airlock");agent("helm","working","holding the desk","bridge");$("#riskBadge").textContent="HOLD";$("#riskBadge").style.color=C.amber}
  else{state.rejected=true;event("operator","Action rejected","Publication blocked; all artifacts remain reversible in the Vault.","red");agent("relay","idle","release cancelled","airlock");agent("helm","working","revising release plan","bridge");agent("forge","working","preparing private revision","build");stage("synthesis",48,"Returned for revision","The external action was rejected; the evidence pack remains intact.");$("#riskBadge").textContent="REVISION";$("#riskBadge").style.color=C.amber}
 }
 function start(){
  if(state.complete||state.rejected||state.cursor>=timeline.length)reset(false);if(state.approval)return;
  if(state.elapsed===0){artifactPackets.length=0;selectedArtifactId=null;resetComms();ledgerCall("startMission","NS-INT-042")}
- state.running=true;state.paused=false;$("#startBtn").textContent="● Mission running";event("system","System started","Grok Bot $Architecture event loop is active.","cyan");
+ if($("#missionCode"))$("#missionCode").textContent="NS-INT-042";
+ state.running=true;state.paused=false;$("#startBtn").textContent="● Mission running";event("system","System started","Grok Bot $Architecture event loop is active. Demo mode: NS-INT-042.","cyan");
  if(bridge)bridge.startMission({id:"NS-INT-042",objective:"Build the 2026 competitor intelligence brief",agents:agents.map(a=>a.id)}).then(ack=>event("grok","Command acknowledged","mission.start accepted as #"+ack.sequence+" in "+ack.latency+"ms.","green")).catch(()=>event("grok","Transport warning","Mission continues locally; command acknowledgement was not received.","amber"));
 }
 function pause(){
@@ -179,10 +221,11 @@ function pause(){
 }
 function reset(announce=true){
  state.running=false;state.paused=false;state.approval=false;state.complete=false;state.rejected=false;state.elapsed=0;state.cursor=0;state.artifacts=0;state.spend=.42;agents=initial.map(a=>({...a}));resetComms();
- $("#approvalIdle").hidden=false;$("#approvalRequest").hidden=true;$("#airlockMetric").textContent="CLEAR";$("#airlockMetric").style.color="";$("#spendMetric").textContent="$0.42";$("#riskBadge").textContent="LOW RISK";$("#riskBadge").style.color="";$("#startBtn").textContent="▶ Start mission";$("#pauseBtn").textContent="Ⅱ";
+ $("#approvalIdle").hidden=false;$("#approvalRequest").hidden=true;$("#airlockMetric").textContent="CLEAR";$("#airlockMetric").style.color="";$("#spendMetric").textContent="$0.42";$("#riskBadge").textContent="LOW RISK";$("#riskBadge").style.color="";$("#startBtn").textContent="▶ Start mission";$("#pauseBtn").textContent="Ⅱ";if($("#missionCode"))$("#missionCode").textContent="NS-INT-042";
  stage(null,0,"Build the 2026 competitor intelligence brief","Research 24 sources, map claims, build an evidence pack, audit, and prepare release.");document.querySelectorAll("#stages span").forEach(n=>n.classList.remove("active","done"));renderRoster();select("helm");if(announce)event("system","Mission reset","All agents returned to their stations; the five-minute clock is ready.","amber");
  if(bridge&&announce)bridge.resetMission();
  if(ledger&&announce){artifactPackets.length=0;selectedArtifactId=null;ledgerCall("startMission","NS-INT-042")}
+ if(announce)restoreDeskFloor();
 }
 function burst(x,y,color,count){for(let i=0;i<count;i++)state.particles.push({x,y,color,life:1,dx:(Math.random()-.5)*2.8,dy:(Math.random()-.5)*2.8})}
 function resize(){const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);canvas.width=Math.max(1,r.width*d);canvas.height=Math.max(1,r.height*d);ctx.setTransform(d,0,0,d,0,0);ctx.imageSmoothingEnabled=false}
@@ -279,7 +322,7 @@ function drawArtifactPackets(){
 }
 function move(dt){agents.forEach(a=>{const dx=a.tx-a.x,dy=a.ty-a.y,d=Math.hypot(dx,dy);if(d>1){const step=Math.min(d,dt*.11);a.x+=dx/d*step;a.y+=dy/d*step;if(Math.random()<.07)state.particles.push({x:a.x,y:a.y+18,color:a.color,life:.35,dx:0,dy:.3})}else if(a.path&&a.path.length){const next=a.path.shift();a.tx=next.x;a.ty=next.y}})}
 function ambient(now){
- const phrases={helm:["checking dependencies","watching floor status"],forge:["checking build queue","fetching component spec"],sentinel:["sampling event logs","checking safety rules"],scout:["scanning signal board","reading source notes"],archive:["checking artifact hashes","syncing source ledger"],relay:["checking approval queue","staging delivery route"]};
+ const phrases={helm:["checking dependencies","watching floor status"],forge:["watching US tape","checking sector breadth"],sentinel:["sampling risk flags","checking safety rules"],scout:["scanning BTC tape","reading funding prints"],archive:["reading regime board","checking volatility bands"],relay:["scanning X mentions","watching social tape"]};
  const walkSpots=[points.library,points.printer,points.lounge,{x:245,y:292},{x:650,y:292},{x:245,y:495},{x:610,y:495},{x:500,y:102}];
  agents.forEach(a=>{if(a.returnAt&&now>a.returnAt&&a.state==="idle"){const h=points[a.zone]||points.bridge;navigate(a,h.x,h.y);a.activity="";a.returnAt=0}});
  if(now<state.ambientAt)return;const idle=agents.filter(a=>a.state==="idle"&&a.zone!=="core"&&!a.returnAt);if(idle.length){const a=idle[Math.floor(Math.random()*idle.length)],spot=walkSpots[Math.floor(Math.random()*walkSpots.length)];navigate(a,spot.x+(Math.random()-.5)*24,spot.y+(Math.random()-.5)*18);a.activity=phrases[a.id][Math.floor(Math.random()*phrases[a.id].length)];a.returnAt=now+5000+Math.random()*4500}state.ambientAt=now+1300+Math.random()*1700;
@@ -294,19 +337,30 @@ function canvasClick(e){const r=canvas.getBoundingClientRect(),t=transform(),x=(
 function clock(){$("#clock").textContent=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Moscow",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date())}
 function transportState(status,detail={}){
  const badge=$("#connectionBadge"),label=$("#connectionText"),bus=$("#eventBusStatus"),footer=$("#transportStatus"),session=(detail.sessionId||bridge&&bridge.sessionId||"session_pending").split("_").pop().slice(-6).toUpperCase();
- badge.classList.remove("connecting","online","offline");badge.classList.add(status);badge.dataset.mode=detail.mode||"mock";
- if(status==="online"){label.textContent="GROK LINK";bus.textContent="ONLINE";footer.textContent="SIM "+session+" · "+(detail.rtt||"--")+"ms · queue "+(detail.queueDepth||0)}
+ const mode=detail.mode||(bridge&&bridge.mode)||"mock",live=mode==="live";
+ badge.classList.remove("connecting","online","offline");badge.classList.add(status);badge.dataset.mode=mode;
+ if(status==="online"){label.textContent="GROK LINK";bus.textContent=live?"LIVE DESK":"ONLINE";footer.textContent=(live?"LIVE ":"SIM ")+session+" · "+(detail.rtt||"--")+"ms · "+(live?"desk feed":"queue "+(detail.queueDepth||0))}
  else if(status==="connecting"){label.textContent="LINKING";bus.textContent="LINKING";footer.textContent="Negotiating Grok session "+session}
  else{label.textContent="OFFLINE";bus.textContent="OFFLINE";footer.textContent="Local mission engine only"}
- badge.title="Grok Bot transport · session "+session;
+ badge.title=(live?"Live desk feed":"Grok Bot transport")+" · session "+session;
 }
 function bindTransport(){
  if(!bridge){transportState("offline");return}
- bridge.addEventListener("connection",e=>transportState(e.detail.status,e.detail));
- bridge.addEventListener("heartbeat",e=>transportState("online",e.detail));
+ bridge.addEventListener("connection",e=>transportState(e.detail.status||bridge.status,e.detail));
+ bridge.addEventListener("heartbeat",e=>transportState("online",Object.assign({mode:bridge.mode},e.detail)));
  bridge.addEventListener("queue",e=>{const status=bridge.snapshot();transportState(status.status,{sessionId:status.sessionId,mode:status.mode,rtt:status.lastAck&&status.lastAck.latency,queueDepth:e.detail.depth})});
- bridge.addEventListener("ack",e=>transportState("online",{sessionId:e.detail.sessionId,mode:e.detail.mode,rtt:e.detail.latency,queueDepth:bridge.snapshot().queueDepth}));
- bridge.connect().then(info=>event("grok","Mock transport connected","Persistent local session "+info.sessionId.split("_").pop().toUpperCase()+" is receiving commands and telemetry.","green")).catch(()=>transportState("offline"));
+ bridge.addEventListener("ack",e=>transportState("online",{sessionId:e.detail.sessionId,mode:e.detail.mode||bridge.mode,rtt:e.detail.latency,queueDepth:bridge.snapshot().queueDepth}));
+ let liveAnnounced=false;
+ bridge.addEventListener("desk",e=>applyDeskEvent(e.detail));
+ bridge.addEventListener("desk-batch",e=>{
+  if(liveAnnounced||!e.detail.events||!e.detail.events.length)return;liveAnnounced=true;
+  event("grok","Desk feed connected","GitHub-backed desk/comms.json is driving Live Agent Comms. Start mission remains the NS-INT-042 demo.","green");
+ });
+ bridge.addEventListener("desk-error",e=>event("grok","Desk feed idle","Could not read "+e.detail.url+". Serve the repo locally or keep SIM demo mode.","amber"));
+ bridge.connect().then(info=>{
+  if(info.mode==="live"||bridge.mode==="live"||liveAnnounced)return;
+  event("grok","Mock transport connected","Persistent local session "+info.sessionId.split("_").pop().toUpperCase()+" is receiving commands and telemetry.","green");
+ }).catch(()=>transportState("offline"));
 }
 $("#startBtn").onclick=start;$("#pauseBtn").onclick=pause;$("#resetBtn").onclick=()=>reset();$("#speed").onchange=e=>{state.speed=Number(e.target.value);event("system","Timeline speed changed","System is running at "+state.speed+"×.","amber")};$("#approveBtn").onclick=()=>resolve(true);$("#rejectBtn").onclick=()=>resolve(false);$("#inspectBtn").onclick=()=>$("#inspectDialog").showModal();$("#clearFeed").onclick=()=>{$("#eventFeed").innerHTML="";state.count=0;$("#eventCount").textContent="00 EVENTS"};canvas.onclick=canvasClick;window.onresize=resize;if("ResizeObserver"in window)new ResizeObserver(resize).observe(canvas);
 window.onkeydown=e=>{if(e.code==="Space"&&e.target.tagName!=="BUTTON"){e.preventDefault();state.running?pause():start()}if(e.key.toLowerCase()==="r")reset()};
@@ -317,6 +371,7 @@ event("system","Station online","Room telemetry, pathing, and the five-minute mi
 clock();setInterval(clock,1000);requestAnimationFrame(tick);
 const autoplay=new URLSearchParams(location.search).get("autoplay");
 if(autoplay==="ledger")setTimeout(ledgerShowcase,250);
+else if(autoplay==="live")setTimeout(()=>{if(bridge&&bridge.deskEvents&&bridge.deskEvents.length){event("system","Live desk watch","Floor is reading desk/comms.json. New GitHub commits appear on the next poll.","green")}else{event("system","Waiting for desk events","Serve the repo and keep desk/comms.json in the same directory.","amber")}},400);
 else if(autoplay==="comms")setTimeout(()=>{state.elapsed=162000;agent("scout","complete","24-source pack verified","skill");agent("forge","delegating","routing evidence bundle","build");agent("archive","working","binding artifact lineage","vault");agent("sentinel","reviewing","opening audit channel","audit");sendComm("scout","forge","research.pack · 24 sources / 17 verified claims","handoff",16000);sendComm("forge","archive","evidence.bundle · 18 artifacts + rollback metadata","handoff",16000);sendComm("archive","sentinel","ledger.index · lineage verified / audit ready","audit",16000);event("system","Agent message bus active","Three encrypted work packets are moving through the operation.","green");stage("evidence",54,"Live inter-agent routing","Research, evidence, and lineage packets are moving between specialist agents.")},250);
 else if(autoplay==="handoff")setTimeout(()=>{state.elapsed=84000;agent("scout","delegating","handing off 24 sources","core");agent("forge","working","receiving source pack","core");const scout=agents.find(x=>x.id==="scout"),forge=agents.find(x=>x.id==="forge");Object.assign(scout,{x:510,y:300,tx:510,ty:300,path:[]});Object.assign(forge,{x:400,y:292,tx:400,ty:292,path:[]});event("scout","Live handoff","Scout and Forge are transferring the verified source pack.","amber");stage("synthesis",28,"Live evidence handoff","Two agents are exchanging 24 verified sources at the common table.")},250);
 else if(autoplay==="approval")setTimeout(()=>{state.elapsed=290000;event("relay","Human decision requested","The audited brief is paused at the release boundary.","amber");agent("sentinel","complete","audit passed: 12/12","audit");agent("relay","waiting approval","awaiting final yes","airlock");agent("helm","waiting approval","decision packet ready","lounge");stage("release",97,"Final approval required","The complete intelligence brief is waiting for one human decision.");requestApproval()},250);

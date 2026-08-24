@@ -29,18 +29,21 @@ The included mission, **NS-INT-042**, demonstrates a complete competitor-intelli
 - Audit invalidation when an already-reviewed artifact is revised.
 - Human approval controls for external or high-impact actions.
 - Responsive full-screen layout for desktop, laptop, tablet, and mobile widths.
+- A GitHub-backed **LIVE** desk feed (`desk/comms.json`) so Chief of Staff can append real messages without a backend server.
 - No framework, package installation, build process, or API key required.
 
 ## Agent team
 
-| Agent | Responsibility | Typical output |
-| --- | --- | --- |
-| **Helm** | Chief of Staff | Mission scope, delegation graph, decision packet |
-| **Scout** | Research Specialist | Verified sources, claims, confidence labels |
-| **Forge** | Product and Synthesis | Claim map, analysis, finished brief |
-| **Archive** | Memory and Artifacts | Evidence index, hashes, source lineage |
-| **Sentinel** | QA and Safety Auditor | Independent checks, warnings, final verdict |
-| **Relay** | External Operations | Release packet and approval request |
+The six floor bots are the live Grok Bot desk. Internal ids stay `helm` / `scout` / `forge` / `archive` / `sentinel` / `relay` so the NS-INT-042 demo still runs; the names and roles on the floor are the desk.
+
+| Floor id | Name | Role | Typical output |
+| --- | --- | --- | --- |
+| **Helm** | Helm | Chief of Staff | Mission scope, delegation, desk decisions |
+| **Scout** | Mimir | Crypto research | Funding, tape, verified crypto notes |
+| **Forge** | Njord | US stocks | Session tape, breadth, equity signals |
+| **Archive** | Heimdall | Market regime | Regime tags, volatility, hold/flip calls |
+| **Sentinel** | Syn | Safety | Policy checks, airlock holds |
+| **Relay** | Huginn | X monitor | Mention clusters, staged (never auto-posted) releases |
 
 ## Mission lifecycle
 
@@ -84,15 +87,44 @@ Then visit `http://localhost:8080`.
 
 ## Operating guide
 
+### Watch the live desk
+
+This is the path Mike uses to monitor the real desk from the same pixel-art floor.
+
+1. Serve the repository (do not open `index.html` as a `file://` URL — the browser cannot poll the desk file that way):
+
+```bash
+python -m http.server 8080
+```
+
+2. Open `http://localhost:8080` (or `http://localhost:8080/index.html?autoplay=live`).
+3. Confirm the header badge reads **GROK LINK · LIVE** once `desk/comms.json` contains events. The footer says `LIVE` instead of `SIM`.
+4. Watch **Live Agent Comms** for routed desk cards (`MIMIR → HELM`, `NJORD → HELM`, `HUGINN → HELM`, …). Agents move and update their task labels from the file.
+5. To publish a new floor message, append an event to `desk/comms.json` and save. The floor polls every 3 seconds. If the file is updated via GitHub, pull or let Pages rebuild, then the next poll paints the card.
+
+Chief of Staff can commit events from the desk without a backend. Copy the shape in `desk/comms.example.json`.
+
+Preview the example (including an airlock hold) with:
+
+```text
+index.html?feed=desk/comms.example.json
+```
+
+### Run the NS-INT-042 demo
+
+Start mission / NS-INT-042 is unchanged demo mode. It does not replace the live feed; it plays the canned competitor-intelligence timeline on the same floor.
+
 1. Open the interface and confirm that all six agents show as online.
 2. Select **Start mission** to begin NS-INT-042.
 3. Watch the progress bar, remaining time, spend, agent statuses, and Live Feed.
 4. Click any bot to inspect its current task and location.
 5. Use the speed selector to run the workflow at `1x`, `2x`, `4x`, or `10x`.
-6. When Relay reaches the Approval Airlock, select:
+6. When Huginn (Relay) reaches the Approval Airlock, select:
    - **Inspect** to review target, payload, rollback, and evidence.
    - **Reject** to block publication and return the mission for revision.
    - **Approve** to release the report and complete the mission.
+
+Consequential desk actions (`trade`, `order`, `publish`, `execute`, or `approval: true`) always stop at the Approval Airlock. The floor never auto-executes a trade.
 
 ### Controls
 
@@ -143,7 +175,34 @@ The browser currently loads `grokbot-adapter.js` before the interface engine. It
 - approval request and resolution commands;
 - a 40-event local telemetry buffer.
 
-The header deliberately displays `SIM` next to `GROK LINK`. Replace `window.grokBot` with an adapter exposing the same methods to connect a real service without changing the canvas renderer or mission controls.
+The header displays `SIM` next to `GROK LINK` while only the mock transport is active. When `desk/comms.json` has events, the adapter flips to live mode and the same badge reads `LIVE`. Replace `window.grokBot` with an adapter exposing the same methods to connect a real service without changing the canvas renderer or mission controls.
+
+### GitHub-backed live desk feed
+
+`grokbot-adapter.js` still owns the mock command/heartbeat transport, and now also polls `desk/comms.json` (override with `?feed=`). New events are emitted as `desk` packets. `app.js` feeds them through the existing `agent()`, `event()`, and `sendComm()` path — no second renderer.
+
+Event shape:
+
+```json
+{
+  "id": "desk-002",
+  "missionId": "DESK-LIVE",
+  "agent": "scout",
+  "state": "working",
+  "activity": "scanning BTC funding",
+  "zone": "skill",
+  "progress": 18,
+  "timestamp": "2026-08-24T22:41:12Z",
+  "from": "mimir",
+  "to": "helm",
+  "channel": "crypto",
+  "title": "Funding flip",
+  "text": "BTC funding flipped negative. Watching for a cascade, not trading it.",
+  "tone": "amber"
+}
+```
+
+`from` / `to` / `text` draw a Live Agent Comms card. `agent` / `state` / `activity` / `zone` move the bot. `approval: true` or `action: "trade"` opens the airlock and never places an order.
 
 ### Mission Ledger and artifact lineage
 
@@ -170,29 +229,32 @@ This preloads a complete artifact lineage, opens the inspector, draws handoff pa
 
 ### Live Agent Comms
 
-Key mission handoffs now publish a visible inter-agent message:
+Key mission handoffs now publish a visible inter-agent message. The demo still uses the same floor ids; the cards show desk names:
 
-- Helm routes the research scope to Scout;
-- Scout transfers the verified research pack to Forge;
-- Forge sends the evidence bundle to Archive;
-- Archive opens a lineage channel to Sentinel;
-- Sentinel forwards the signed audit receipt to Relay.
+- Helm routes the research scope to Mimir;
+- Mimir transfers the verified research pack to Njord;
+- Njord sends the evidence bundle to Heimdall;
+- Heimdall opens a lineage channel to Syn;
+- Syn forwards the signed audit receipt to Huginn.
+
+Live desk traffic uses the same panel. Open the floor over HTTP and the committed `desk/comms.json` events appear as soon as the adapter polls them. Open `index.html?autoplay=comms` for the canned three-channel showcase, or `index.html?autoplay=live` to watch the GitHub-backed file.
 
 The Operations Floor draws the active channel directly between both bots, moves encrypted packets along the route, and keeps the three latest messages in the `LIVE AGENT COMMS` panel.
 
-Open `index.html?autoplay=comms` for an instant three-channel showcase.
-
-Suggested production event format:
+Suggested production event format (also used by `desk/comms.json`):
 
 ```json
 {
-  "missionId": "NS-INT-042",
+  "missionId": "DESK-LIVE",
   "agent": "scout",
   "state": "working",
   "activity": "sourced 6 links",
   "zone": "library",
   "progress": 16,
-  "timestamp": "2026-08-24T12:00:00Z"
+  "timestamp": "2026-08-24T12:00:00Z",
+  "from": "mimir",
+  "to": "helm",
+  "text": "Short comms card for the floor."
 }
 ```
 
@@ -204,8 +266,10 @@ Consequential operations should always be represented as approval requests and m
 .
 ├── index.html          Application shell and control panels
 ├── app.js              Mission engine, routing, agents, canvas renderer
-├── grokbot-adapter.js  Mock transport, commands, heartbeat, persistence
+├── grokbot-adapter.js  Mock transport, desk/comms.json poll, heartbeat
 ├── mission-ledger.js   Hash chain, artifact versions, lineage, policies
+├── desk/comms.json     Live desk events (GitHub-backed, no server)
+├── desk/comms.example.json  Copy-paste event shape + airlock example
 ├── styles.css          Base layout and component styles
 ├── theme-muted.css     Grok Bot $ARCHITECTURE theme and responsive rules
 ├── preview.png         Current interface preview
@@ -215,6 +279,7 @@ Consequential operations should always be represented as approval requests and m
 ## Customization
 
 - Change agent names, roles, colors, and default positions in the `initial` array inside `app.js`.
+- Append live desk messages to `desk/comms.json` (see `desk/comms.example.json`).
 - Add or edit mission events in the `timeline` array.
 - Adjust the five-minute runtime using `state.duration`.
 - Add room destinations in the `points` object.
@@ -224,4 +289,4 @@ Consequential operations should always be represented as approval requests and m
 
 ## Current status
 
-The interface, movement system, mission state machine, telemetry feed, mock transport, and approval flow run entirely in the browser. External data sources, server-side storage, authentication, and real model execution remain integration points for the production backend.
+The interface, movement system, mission state machine, telemetry feed, mock transport, GitHub-backed desk feed, and approval flow run entirely in the browser. Open the floor, keep `desk/comms.json` updated, and watch Live Agent Comms. External broker/order execution is intentionally out of scope — the airlock is the stop.
